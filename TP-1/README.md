@@ -1,5 +1,33 @@
-# Trabajo Practico 1
+# Ejercicios TP1 Robótica Móvil
 
-Los ejercicios 1, 2,3 y 4 se realizaron en livescripst de matlab 2021a. Se utilizó la libreria de Peter Corke [robotics toolbox](https://petercorke.com/toolboxes/robotics-toolbox/). Para el correcto funcionamiento de los codigos es recomendable setear los path de dicha libreria primeros en la lista.
+## Descripción
+Este repositorio contiene la resolución de diferentes ejercicios de robótica utilizando **MATLAB 2021a** y **Jupyter Notebook**.  
+Se emplea la librería [Robotics Toolbox](https://petercorke.com/toolboxes/robotics-toolbox/) de Peter Corke para el desarrollo de algunos de los scripts.
 
-El ejericio 6 se desarrollo en Jupyter notebook, por lo que se requiere un compilador compatible con archivos '.ipynb'. Y se deben modoficar las rutas de las descargas del dataset utilizado.
+---
+
+## Ejercicios en MATLAB
+- **Ejercicios 1, 2, 3 y 4**  
+  - Implementados en **Live Scripts** de MATLAB 2021a.  
+  - Requieren la librería *Robotics Toolbox* de Peter Corke.  
+  - Para un correcto funcionamiento, se recomienda establecer las rutas (*path*) de la librería en primer lugar dentro de la lista de búsqueda de MATLAB.  
+
+---
+
+## Ejercicio en Jupyter Notebook
+- **Ejercicio 6**  
+  - Implementado en **Jupyter Notebook** (`.ipynb`).  
+  - Se requiere un entorno compatible con archivos de este formato (por ejemplo, Anaconda, JupyterLab, VS Code con extensión de Jupyter, etc.).  
+  - Es necesario modificar las rutas de descarga del *dataset* utilizado antes de ejecutar el código.  
+
+---
+
+## Requisitos
+- MATLAB 2021a  
+- Robotics Toolbox de Peter Corke  
+- Python 3.x con soporte para Jupyter Notebook  
+
+---
+
+## Autor
+✍️ Autores del proyecto: *Sacha Varela y Geronimo Gonzalez Marino*  
