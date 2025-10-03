@@ -10,8 +10,8 @@ class LandmarkDetector(Node):
         super().__init__('landmark_detector')
 
         # Parámetros
-        self.r_cylinder = 0.5  # radio del cilindro (para el Marker)
         self.max_range = 10.0   # máximo radio a considerar (m)
+        self.cluster_threshold = 0.2  # distancia máxima entre puntos para agrupar
 
         # Suscripción al LIDAR
         self.sub_scan = self.create_subscription(
@@ -24,11 +24,9 @@ class LandmarkDetector(Node):
         self.get_logger().info("Nodo Landmark Detector inicializado")
 
     def laser_callback(self, msg: LaserScan):
-        # Calcular ángulos para cada rayo
+        # Calcular ángulos y rangos válidos
         angles = msg.angle_min + np.arange(len(msg.ranges)) * msg.angle_increment
         ranges = np.array(msg.ranges)
-
-        # Filtrar valores válidos
         valid = np.isfinite(ranges) & (ranges > 0.0) & (ranges < self.max_range)
         if not np.any(valid):
             return
@@ -41,35 +39,42 @@ class LandmarkDetector(Node):
         # -------------------------------
         # Agrupar puntos contiguos en clusters
         # -------------------------------
-        cluster_threshold = 0.2  # distancia máxima entre puntos
         clusters = []
         current_cluster = [(x[0], y[0], ang_valid[0])]
 
         for i in range(1, len(x)):
             dx, dy = x[i] - x[i-1], y[i] - y[i-1]
             dist = np.hypot(dx, dy)
-            if dist < cluster_threshold:
+            if dist < self.cluster_threshold:
                 current_cluster.append((x[i], y[i], ang_valid[i]))
             else:
                 if len(current_cluster) > 2:  # guardar cluster si tiene puntos suficientes
                     clusters.append(current_cluster)
                 current_cluster = [(x[i], y[i], ang_valid[i])]
-
         if len(current_cluster) > 2:
             clusters.append(current_cluster)
 
         # -------------------------------
-        # Publicar un marker por cluster (en el centroide corregido)
+        # Publicar un marker por cluster
         # -------------------------------
         for i, cluster in enumerate(clusters):
             pts = np.array(cluster)
-            cx, cy = np.mean(pts[:, 0]), np.mean(pts[:, 1])  # centroide preliminar
-            mean_angle = np.mean(pts[:, 2])                   # ángulo medio del cluster
+            
+            # Centroide preliminar
+            cx, cy = np.mean(pts[:, 0]), np.mean(pts[:, 1])
+            mean_angle = np.mean(pts[:, 2])
 
-            # Corregir el centroide: desplazar hacia afuera del cilindro
-            cx += self.r_cylinder * np.cos(mean_angle)
-            cy += self.r_cylinder * np.sin(mean_angle)
+            # Estimar radio como mitad de la distancia entre primer y último punto
+            x_first, y_first = pts[0, 0], pts[0, 1]
+            x_last, y_last   = pts[-1, 0], pts[-1, 1]
+            diameter_est = np.sqrt((x_last - x_first)**2 + (y_last - y_first)**2)
+            r_cylinder = diameter_est / 2.0
 
+            # Corregir el centroide (desplazar hacia afuera del cilindro)
+            cx += r_cylinder * np.cos(mean_angle)
+            cy += r_cylinder * np.sin(mean_angle)
+
+            # Crear marker
             marker = Marker()
             marker.header.frame_id = msg.header.frame_id
             marker.header.stamp = self.get_clock().now().to_msg()
@@ -81,8 +86,8 @@ class LandmarkDetector(Node):
             marker.pose.position.y = float(cy)
             marker.pose.position.z = 0.25
             marker.pose.orientation.w = 1.0
-            marker.scale.x = 2 * self.r_cylinder
-            marker.scale.y = 2 * self.r_cylinder
+            marker.scale.x = 2 * r_cylinder
+            marker.scale.y = 2 * r_cylinder
             marker.scale.z = 0.5
             marker.color.r = 1.0
             marker.color.g = 0.0
@@ -92,12 +97,12 @@ class LandmarkDetector(Node):
             self.pub_marker.publish(marker)
 
 
-
 def main(args=None):
     rclpy.init(args=args)
     node = LandmarkDetector()
     rclpy.spin(node)
     rclpy.shutdown()
+
 
 if __name__ == "__main__":
     main()
