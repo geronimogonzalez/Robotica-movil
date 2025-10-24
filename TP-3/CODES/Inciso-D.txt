@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import Image, PointCloud2, PointField
+from sensor_msgs_py import point_cloud2
+from cv_bridge import CvBridge
+import cv2
+import yaml
+import numpy as np
+from message_filters import Subscriber, ApproximateTimeSynchronizer
+
+
+class StereoTriangulationNode(Node):
+    def __init__(self, left_yaml, right_yaml):
+        super().__init__('stereo_triangulation_node')
+
+        self.bridge = CvBridge()
+
+        # --- Cargar parámetros de cámara ---
+        self.K1, self.D1, self.R1, self.P1, self.width1, self.height1 = self.load_camera_params(left_yaml)
+        self.K2, self.D2, self.R2, self.P2, self.width2, self.height2 = self.load_camera_params(right_yaml)
+
+        # --- Publicadores ---
+        self.pub_matches = self.create_publisher(Image, '/stereo/matches_good', 1)
+        self.pub_pointcloud = self.create_publisher(PointCloud2, '/stereo/pointcloud', 1)
+
+        # --- Sincronización de imágenes ---
+        sub_l = Subscriber(self, Image, '/cam0/image_raw')
+        sub_r = Subscriber(self, Image, '/cam1/image_raw')
+        self.ts = ApproximateTimeSynchronizer([sub_l, sub_r], queue_size=10, slop=0.05)
+        self.ts.registerCallback(self.callback)
+
+        # --- Detector y descriptor ORB ---
+        self.orb = cv2.ORB_create(nfeatures=1000)
+        self.bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+
+        self.maps_computed = False
+        self.frame_count = 0
+
+        self.get_logger().info("Nodo de triangulación estéreo iniciado correctamente.")
+
+    def load_camera_params(self, yaml_file):
+        with open(yaml_file, 'r') as f:
+            data = yaml.safe_load(f)
+        K = np.array(data['camera_matrix']['data']).reshape(3, 3)
+        D = np.array(data['distortion_coefficients']['data']).ravel()
+        R = np.array(data['rectification_matrix']['data']).reshape(3, 3)
+        P = np.array(data['projection_matrix']['data']).reshape(3, 4)
+        width = data['image_width']
+        height = data['image_height']
+        return K, D, R, P, width, height
+
+    def compute_rectification_maps(self, size):
+        self.map1x, self.map1y = cv2.initUndistortRectifyMap(
+            self.K1, self.D1, self.R1, self.P1[:, :3], size, cv2.CV_32FC1)
+        self.map2x, self.map2y = cv2.initUndistortRectifyMap(
+            self.K2, self.D2, self.R2, self.P2[:, :3], size, cv2.CV_32FC1)
+        self.maps_computed = True
+        self.get_logger().info("Mapas de rectificación listos.")
+
+    def callback(self, msg_l, msg_r):
+        imgL = self.bridge.imgmsg_to_cv2(msg_l, desired_encoding='mono8')
+        imgR = self.bridge.imgmsg_to_cv2(msg_r, desired_encoding='mono8')
+
+        h, w = imgL.shape[:2]
+        if not self.maps_computed:
+            self.compute_rectification_maps((w, h))
+
+        # --- Rectificación ---
+        rectL = cv2.remap(imgL, self.map1x, self.map1y, cv2.INTER_LINEAR)
+        rectR = cv2.remap(imgR, self.map2x, self.map2y, cv2.INTER_LINEAR)
+
+        # --- Detectar features ---
+        kpL, desL = self.orb.detectAndCompute(rectL, None)
+        kpR, desR = self.orb.detectAndCompute(rectR, None)
+        if desL is None or desR is None:
+            self.get_logger().warn("No se detectaron descriptores.")
+            return
+
+        # --- Matching ---
+        matches = self.bf.match(desL, desR)
+        good_matches = [m for m in matches if m.distance < 30]
+        if len(good_matches) < 8:
+            self.get_logger().warn("No hay suficientes matches buenos para triangulación.")
+            return
+
+        # --- Visualización ---
+        img_matches = cv2.drawMatches(rectL, kpL, rectR, kpR, good_matches, None,
+                                      flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+        self.pub_matches.publish(self.bridge.cv2_to_imgmsg(img_matches, encoding='bgr8'))
+
+        # --- Preparar puntos para triangulación ---
+        ptsL = np.float32([kpL[m.queryIdx].pt for m in good_matches]).T
+        ptsR = np.float32([kpR[m.trainIdx].pt for m in good_matches]).T
+
+        # --- Matrices de proyección ---
+        P1 = self.P1
+        P2 = self.P2
+
+        # --- Triangulación ---
+        points_4d = cv2.triangulatePoints(P1, P2, ptsL, ptsR)
+        points_3d = points_4d[:3, :] / points_4d[3, :]  # convertir de homogéneo
+
+        # --- Crear PointCloud2 ---
+        cloud_points = []
+        for i in range(points_3d.shape[1]):
+            x, y, z = points_3d[:, i]
+            if np.isfinite(x) and np.isfinite(y) and np.isfinite(z):
+                cloud_points.append((float(x), float(y), float(z)))
+
+        header = msg_l.header
+        header.frame_id = "stereo_camera"
+
+        pointcloud_msg = point_cloud2.create_cloud_xyz32(header, cloud_points)
+        self.pub_pointcloud.publish(pointcloud_msg)
+
+        self.frame_count += 1
+        self.get_logger().info(f"Frame {self.frame_count}: {len(cloud_points)} puntos triangulados publicados.")
+
+
+# --- MAIN ---
+import argparse
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--left', required=True, help='Ruta a left.yaml')
+    parser.add_argument('--right', required=True, help='Ruta a right.yaml')
+    args = parser.parse_args()
+
+    rclpy.init()
+    node = StereoTriangulationNode(args.left, args.right)
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()
+# Publicar TF
+#ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 map stereo_camera
