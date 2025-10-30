@@ -1,0 +1,48 @@
+{
+   // Use IntelliSense to learn about possible attributes.
+   // Hover to view descriptions of existing attributes.
+   // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+   "version": "0.2.0",
+   "configurations": [
+      {
+         "name": "Incisos A a F y J",
+         "type": "debugpy",
+         "request": "launch",
+         "program": "${file}",
+         "console": "integratedTerminal",
+         "args": "--left left.yaml --right right.yaml"
+      },
+      {
+         "name": "ground_truth publisher M101 ",
+         "type": "debugpy",
+         "request": "launch",
+         "program": "${file}",
+         "console": "integratedTerminal",
+         "args": "--csv gt_M101.csv"
+      }
+      {
+         "name": "ground_truth publisher V102 ",
+         "type": "debugpy",
+         "request": "launch",
+         "program": "${file}",
+         "console": "integratedTerminal",
+         "args": "--csv gt_V201.csv"
+      }
+      {
+         "name": "Inciso g, h , i - M101 ",
+         "type": "debugpy",
+         "request": "launch",
+         "program": "${file}",
+         "console": "integratedTerminal",
+         "args": "--left left.yaml --right right.yaml --csv gt_M101.csv"
+      }
+      {
+         "name": "Inciso g, h , i - V201 ",
+         "type": "debugpy",
+         "request": "launch",
+         "program": "${file}",
+         "console": "integratedTerminal",
+         "args": "--left left.yaml --right right.yaml --csv gt_V201.csv"
+      }
+   ]
+}
